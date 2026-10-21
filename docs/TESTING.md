@@ -1,6 +1,6 @@
 # Testing
 
-The test suite uses pytest and deterministic synthetic bytes. It covers endian helpers, bit extraction, entropy endpoints, Ethernet, IPv4, TCP flags, UDP, ARP, truncation, fragments, PCAP metadata, flow keys, DNS labels and pointers, CIDR arithmetic, file signatures, PE, ELF, log normalization, sorting, and correlation.
+The test suite uses pytest and deterministic synthetic bytes. It covers endian helpers, bit extraction, entropy endpoints, Ethernet, IPv4, TCP flags, UDP, ARP, truncation, fragments, PCAP byte orders and field types, flow keys, DNS labels and pointers, CIDR arithmetic, Windows route selection, file signatures, PE section ranges, ELF, per-field process failures, UTC normalization, sorting, and contextual correlation.
 
 Run all tests from the repository root:
 
@@ -20,7 +20,8 @@ python -m deeptrace explain ipv4 sample-data/sample.pcap
 python -m deeptrace timeline sample-data/events.jsonl
 python -m deeptrace timeline sample-data/linux-auth.log
 python -m deeptrace host
+python -m deeptrace route 8.8.8.8
 ```
 
-DNS and route commands depend on network and operating-system state, so unit tests exercise their pure parsing and calculation layers instead of external services.
+DNS and route commands depend on network and operating-system state. Unit tests therefore exercise their pure parsing and calculation layers with deterministic fixtures, while live route checks are run when the host supports them.
 

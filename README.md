@@ -95,19 +95,19 @@ DNS queries are assembled as bytes and sent over UDP. Responses are parsed by De
 
 The file command detects PE, ELF, PDF, ZIP, PNG, and JPEG from signatures, not extensions. It calculates SHA-256, an identification-only MD5, Shannon entropy, and filesystem timestamps.
 
-For PE files, DeepTrace follows `e_lfanew` from the DOS header to the COFF and optional headers, then walks section entries. Writable and executable sections, high entropy, and unusual names are shown only as informational indicators. None of them proves malicious intent. ELF inspection reads class, endianness, ABI, machine, entry point, and program/section table metadata directly from the ELF header.
+For PE files, DeepTrace follows `e_lfanew` from the DOS header to the COFF and optional headers, then walks section entries. Declared raw section ranges must fit within the file before entropy is calculated. Writable and executable sections, high entropy, and unusual names are shown only as informational indicators. None of them proves malicious intent. ELF inspection reads class, endianness, ABI, machine, entry point, and program/section table metadata directly from the ELF header.
 
 ## Host and process inspection
 
-`host` uses psutil for portable interfaces, listeners, CPU, and memory information. On Linux, `process` also reads selected values from `/proc/<pid>/status` and counts accessible file descriptors. On Windows, psutil obtains process and connection information through supported OS APIs. Permission failures are reported as unavailable instead of aborting unrelated fields.
+`host` uses psutil for portable interfaces, listeners, CPU, and memory information. On Linux, `process` also reads selected values from `/proc/<pid>/status` and counts accessible file descriptors. On Windows, psutil obtains process and connection information through supported OS APIs. Permission failures are reported on the affected field instead of aborting unrelated process details.
 
-Routing inspection calls the platform's read-only route utility. Windows output is evaluated by longest matching prefix. Linux uses `ip route get`, whose result is the kernel's selected route rather than a reconstructed full table.
+Routing inspection is read-only. Windows first asks `Find-NetRoute` for the selected route and falls back to evaluating the full `route print -4` table by prefix length and metric. Linux uses `ip route get`, whose result is the kernel's selected route rather than a reconstructed full table.
 
 ## Logs, timeline, and correlation
 
-The normalizer understands JSONL events with common Sysmon-like fields, Linux SSH authentication lines, and basic syslog. Unknown input is retained in `raw_event`. This is a deliberately small teaching parser, not a universal log ingestion system.
+The normalizer understands JSONL events with common Sysmon-like fields, Linux SSH authentication lines, and basic syslog. Timezone-aware inputs are converted to UTC, while naive ISO timestamps are interpreted as UTC. Unknown input is retained in `raw_event`. This is a deliberately small teaching parser, not a universal log ingestion system.
 
-The correlation engine contains three understandable patterns: repeated SSH failures, a PowerShell/network/temp-executable execution chain, and a standalone executable written to a temporary directory. Findings are deterministic and preserve event indexes. They are examples of how higher-level security observations can emerge from normalized facts.
+The correlation engine contains three understandable patterns: repeated SSH failures, a PowerShell/network/temp-executable execution chain, and a standalone executable written to a temporary directory. The execution chain uses chronological order, a five-minute window, host context, available process identity, and the created executable basename. Findings are deterministic and preserve event indexes. They are examples of how higher-level security observations can emerge from normalized facts.
 
 ## Repository structure
 
