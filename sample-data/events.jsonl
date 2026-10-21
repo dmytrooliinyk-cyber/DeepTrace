@@ -1,0 +1,4 @@
+{"timestamp": "2026-10-20T10:00:00Z", "source": "sysmon", "event_type": "process_start", "hostname": "lab-host", "process_name": "powershell.exe", "pid": 4100, "message": "PowerShell started"}
+{"timestamp": "2026-10-20T10:00:02Z", "source": "sysmon", "event_type": "network_connection", "hostname": "lab-host", "process_name": "powershell.exe", "pid": 4100, "destination_ip": "198.51.100.20"}
+{"timestamp": "2026-10-20T10:00:04Z", "source": "sysmon", "event_type": "file_create", "hostname": "lab-host", "path": "C:\\Users\\demo\\AppData\\Local\\Temp\\stage.exe"}
+{"timestamp": "2026-10-20T10:00:06Z", "source": "sysmon", "event_type": "process_start", "hostname": "lab-host", "process_name": "stage.exe", "pid": 4200}
