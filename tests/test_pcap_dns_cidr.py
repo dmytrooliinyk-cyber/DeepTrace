@@ -1,4 +1,5 @@
 import struct
+from pathlib import Path
 
 import pytest
 
@@ -15,7 +16,7 @@ def ethernet_tcp() -> bytes:
 
 
 def pcap_bytes(packet: bytes) -> bytes:
-    return bytes.fromhex("d4c3b2a1") + struct.pack("<HHiiii", 2, 4, 0, 0, 65535, 1) + struct.pack("<IIII", 1700000000, 123000, len(packet), len(packet)) + packet
+    return bytes.fromhex("d4c3b2a1") + struct.pack("<HHiIII", 2, 4, 0, 0, 65535, 1) + struct.pack("<IIII", 1700000000, 123000, len(packet), len(packet)) + packet
 
 
 def test_pcap_header_record_and_flow():
@@ -33,7 +34,7 @@ def test_pcap_header_record_and_flow():
 def test_bad_pcap_magic_and_truncated_record():
     with pytest.raises(ParseError):
         PcapReader(b"bad" + b"\0" * 30)
-    reader = PcapReader(bytes.fromhex("d4c3b2a1") + struct.pack("<HHiiii", 2, 4, 0, 0, 65535, 1) + b"\0")
+    reader = PcapReader(bytes.fromhex("d4c3b2a1") + struct.pack("<HHiIII", 2, 4, 0, 0, 65535, 1) + b"\0")
     with pytest.raises(ParseError):
         list(reader.records())
 
@@ -65,4 +66,30 @@ def test_cidr_math():
     assert report.last_usable == "192.168.10.94"
     assert report.usable_hosts == 30
     assert report.mask_binary == "11111111.11111111.11111111.11100000"
+
+
+@pytest.mark.parametrize(
+    ("magic", "order", "nano"),
+    [
+        (bytes.fromhex("d4c3b2a1"), "<", False),
+        (bytes.fromhex("a1b2c3d4"), ">", False),
+        (bytes.fromhex("4d3cb2a1"), "<", True),
+        (bytes.fromhex("a1b23c4d"), ">", True),
+    ],
+)
+def test_pcap_header_endianness_and_timestamp_resolution(magic, order, nano):
+    data = magic + struct.pack(f"{order}HHiIII", 2, 4, -3600, 0xFFFFFFFF, 0xFFFFFFFF, 0x80000001)
+    header = PcapReader(data).header
+    assert header.byte_order == order
+    assert header.nanosecond_resolution is nano
+    assert header.snaplen == 0xFFFFFFFF
+    assert header.link_type == 0x80000001
+
+
+def test_bundled_sample_pcap_still_parses():
+    reader = PcapReader.from_path(Path("sample-data/sample.pcap"))
+    records = list(reader.records())
+    assert reader.header.link_type == 1
+    assert len(records) == 3
+    assert all(record.frame is not None for record in records)
 

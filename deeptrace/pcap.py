@@ -56,7 +56,8 @@ class PcapReader:
             order, nano = MAGIC[data[:4]]
         except KeyError as exc:
             raise ParseError(f"unrecognized PCAP magic {data[:4].hex()}") from exc
-        major, minor, _zone, _sigfigs, snaplen, link_type = struct.unpack_from(f"{order}HHiiii", data, 4)
+        header_format = f"{order}HHiIII"
+        major, minor, _zone, _sigfigs, snaplen, link_type = struct.unpack_from(header_format, data, 4)
         if major != 2:
             raise ParseError(f"unsupported PCAP version {major}.{minor}")
         self.data = data
