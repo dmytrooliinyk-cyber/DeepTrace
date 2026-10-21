@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -48,10 +48,12 @@ def parse_timestamp(value: Any) -> datetime:
     if isinstance(value, (int, float)):
         return datetime.fromtimestamp(value, timezone.utc)
     if isinstance(value, str):
-        normalized = value.replace("Z", "+00:00")
+        normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
         try:
             parsed = datetime.fromisoformat(normalized)
-            return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
         except ValueError:
             pass
     raise ValueError(f"unsupported timestamp {value!r}")
@@ -132,10 +134,34 @@ def correlate(events: Iterable[Event]) -> list[Finding]:
     for start, event in enumerate(ordered):
         if event.event_type != "process_start" or (event.process_name or "").lower() not in {"powershell.exe", "pwsh.exe", "powershell"}:
             continue
-        related = [(i, candidate) for i, candidate in enumerate(ordered[start + 1 : start + 8], start + 1)]
-        network = next(((i, e) for i, e in related if e.event_type == "network_connection" and e.destination_ip), None)
-        created = next(((i, e) for i, e in related if e.event_type == "file_create" and e.path and _is_temp_executable(e.path)), None)
-        launched = next(((i, e) for i, e in related if e.event_type == "process_start" and created and e.process_name and _portable_basename(created[1].path or "").lower() == e.process_name.lower()), None)
+        deadline = event.timestamp + timedelta(minutes=5)
+        network = next(
+            ((i, candidate) for i, candidate in enumerate(ordered[start + 1 :], start + 1)
+             if event.timestamp <= candidate.timestamp <= deadline
+             and candidate.event_type == "network_connection" and candidate.destination_ip
+             and _same_host(event, candidate) and _same_process_when_known(event, candidate)),
+            None,
+        )
+        if not network:
+            continue
+        created = next(
+            ((i, candidate) for i, candidate in enumerate(ordered[network[0] + 1 :], network[0] + 1)
+             if network[1].timestamp <= candidate.timestamp <= deadline
+             and candidate.event_type == "file_create" and candidate.path and _is_temp_executable(candidate.path)
+             and _same_host(event, candidate) and _same_process_when_known(event, candidate)),
+            None,
+        )
+        if not created:
+            continue
+        executable_name = _portable_basename(created[1].path or "").lower()
+        launched = next(
+            ((i, candidate) for i, candidate in enumerate(ordered[created[0] + 1 :], created[0] + 1)
+             if created[1].timestamp <= candidate.timestamp <= deadline
+             and candidate.event_type == "process_start" and candidate.process_name
+             and _portable_basename(candidate.process_name).lower() == executable_name
+             and _same_host(event, candidate)),
+            None,
+        )
         if network and created and launched:
             findings.append(Finding("Script-to-download execution chain", "High", "PowerShell execution followed by an external connection, a temporary executable, and its launch", [start, network[0], created[0], launched[0]]))
 
@@ -154,4 +180,16 @@ def _is_temp_executable(path: str) -> bool:
 def _portable_basename(path: str) -> str:
     """Treat both slash styles as separators regardless of the host running DeepTrace."""
     return path.replace("\\", "/").rsplit("/", 1)[-1]
+
+
+def _same_host(left: Event, right: Event) -> bool:
+    return not (left.hostname and right.hostname and left.hostname.lower() != right.hostname.lower())
+
+
+def _same_process_when_known(left: Event, right: Event) -> bool:
+    if left.pid is not None and right.pid is not None and left.pid != right.pid:
+        return False
+    if left.process_name and right.process_name:
+        return _portable_basename(left.process_name).lower() == _portable_basename(right.process_name).lower()
+    return True
 

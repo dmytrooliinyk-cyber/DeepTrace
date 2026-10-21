@@ -1,7 +1,9 @@
 import json
 from datetime import datetime, timezone
 
-from deeptrace.events import Event, correlate, load_events, normalize_json, normalize_text
+import pytest
+
+from deeptrace.events import Event, correlate, load_events, normalize_json, normalize_text, parse_timestamp
 
 
 def test_linux_ssh_normalization():
@@ -40,5 +42,57 @@ def test_correlations():
     assert any(finding.risk == "High" for finding in findings)
     failures = [Event(t, "linux-auth", "ssh_auth_failure", username="admin", source_ip="192.0.2.4") for _ in range(3)]
     assert correlate(failures)[0].name == "Repeated SSH authentication failures"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2026-10-21T10:00:00Z", "2026-10-21T10:00:00+00:00"),
+        ("2026-10-21T12:00:00+02:00", "2026-10-21T10:00:00+00:00"),
+        ("2026-10-21T04:30:00-05:30", "2026-10-21T10:00:00+00:00"),
+        ("2026-10-21T10:00:00", "2026-10-21T10:00:00+00:00"),
+        (0, "1970-01-01T00:00:00+00:00"),
+    ],
+)
+def test_timestamp_normalization_to_utc(value, expected):
+    assert parse_timestamp(value).isoformat() == expected
+
+
+def _execution_chain(*, network_host="lab", network_pid=100, network_process="powershell.exe", launch_name="stage.exe", network_delay=1):
+    start = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)
+    return [
+        Event(start, "sysmon", "process_start", hostname="lab", process_name="powershell.exe", pid=100),
+        Event(start.replace(minute=start.minute + network_delay), "sysmon", "network_connection", hostname=network_host, destination_ip="198.51.100.9", process_name=network_process, pid=network_pid),
+        Event(start.replace(minute=start.minute + network_delay, second=10), "sysmon", "file_create", hostname="lab", process_name="powershell.exe", pid=100, path="C:\\Temp\\stage.exe"),
+        Event(start.replace(minute=start.minute + network_delay, second=20), "sysmon", "process_start", hostname="lab", process_name=launch_name, pid=200),
+    ]
+
+
+def _has_high_chain(events):
+    return any(finding.risk == "High" for finding in correlate(events))
+
+
+def test_contextual_execution_chain_still_triggers():
+    assert _has_high_chain(_execution_chain())
+
+
+def test_execution_chain_rejects_different_hosts():
+    assert not _has_high_chain(_execution_chain(network_host="other-host"))
+
+
+def test_execution_chain_rejects_events_outside_window():
+    assert not _has_high_chain(_execution_chain(network_delay=6))
+
+
+def test_execution_chain_rejects_mismatched_executable():
+    assert not _has_high_chain(_execution_chain(launch_name="other.exe"))
+
+
+@pytest.mark.parametrize(
+    ("pid", "process_name"),
+    [(101, "powershell.exe"), (100, "chrome.exe")],
+)
+def test_execution_chain_rejects_mismatched_process_identity(pid, process_name):
+    assert not _has_high_chain(_execution_chain(network_pid=pid, network_process=process_name))
 
 
