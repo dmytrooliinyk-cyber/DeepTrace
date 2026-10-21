@@ -18,7 +18,7 @@ See [docs/FEATURE_MAP.md](docs/FEATURE_MAP.md) for the feature-to-concept mappin
 ## Install
 
 ```console
-git clone https://github.com/GGtascher/DeepTrace.git
+git clone https://github.com/dmytrooliinyk-cyber/DeepTrace.git
 cd DeepTrace
 python -m venv .venv
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
