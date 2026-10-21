@@ -40,6 +40,7 @@ def test_pe_parsing():
     assert pe.image_base == 0x140000000
     assert pe.sections[0].name == ".text"
     assert pe.sections[0].characteristics == "R-X"
+    assert pe.sections[0].raw_size == 0x20
 
 
 def test_elf_parsing():
@@ -56,4 +57,28 @@ def test_truncated_executables():
         parse_pe(b"MZ")
     with pytest.raises(ParseError):
         parse_elf(b"\x7fELF")
+
+
+def _pe_with_section_range(raw_offset, raw_size):
+    data = bytearray(minimal_pe())
+    section = 0x98 + 0xF0
+    struct.pack_into("<I", data, section + 16, raw_size)
+    struct.pack_into("<I", data, section + 20, raw_offset)
+    return bytes(data)
+
+
+def test_pe_rejects_section_raw_offset_outside_file():
+    with pytest.raises(ParseError, match="PE section data 0"):
+        parse_pe(_pe_with_section_range(0x1000, 0x20))
+
+
+def test_pe_rejects_section_extending_beyond_eof():
+    with pytest.raises(ParseError, match="PE section data 0"):
+        parse_pe(_pe_with_section_range(0x210, 0x20))
+
+
+def test_pe_allows_zero_length_section_without_reading_raw_offset():
+    pe = parse_pe(_pe_with_section_range(0xFFFFFFFF, 0))
+    assert pe.sections[0].raw_size == 0
+    assert pe.sections[0].entropy == 0.0
 

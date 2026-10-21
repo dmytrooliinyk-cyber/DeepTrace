@@ -74,7 +74,11 @@ def parse_pe(data: bytes) -> PEInfo:
         raw_name, virtual_size, virtual_address, raw_size, raw_offset = struct.unpack_from("<8sIIII", data, offset)
         characteristics = struct.unpack_from("<I", data, offset + 36)[0]
         name = raw_name.split(b"\0", 1)[0].decode("ascii", "replace")
-        raw = data[raw_offset : raw_offset + raw_size] if raw_offset < len(data) else b""
+        if raw_size:
+            require(data, raw_offset, raw_size, f"PE section data {index}")
+            raw = data[raw_offset : raw_offset + raw_size]
+        else:
+            raw = b""
         entropy = shannon_entropy(raw)
         indicators: list[str] = []
         permissions = _permissions(characteristics)
