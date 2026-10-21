@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deeptrace-cli"
+version = "0.1.0"
+description = "Low-level systems and cybersecurity inspection CLI"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+authors = [{name = "Dmytro Oliinyk"}]
+dependencies = ["psutil>=5.9"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+deeptrace = "deeptrace.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["deeptrace*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
