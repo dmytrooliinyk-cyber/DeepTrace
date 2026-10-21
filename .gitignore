@@ -15,4 +15,5 @@ build/
 reports/
 *.tmp
 *.log
+!sample-data/*.log
 
