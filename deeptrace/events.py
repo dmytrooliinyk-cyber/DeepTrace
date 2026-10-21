@@ -70,7 +70,7 @@ def normalize_json(record: dict[str, Any]) -> Event:
     return Event(
         when, str(record.get("source", "json")), str(event_type), record.get("Computer") or record.get("hostname"),
         record.get("User") or record.get("username"), record.get("SourceIp") or record.get("source_ip"), destination_ip,
-        Path(image).name if image else None, _int_or_none(record.get("ProcessId") or record.get("pid")),
+        _portable_basename(image) if image else None, _int_or_none(record.get("ProcessId") or record.get("pid")),
         record.get("TargetFilename") or record.get("path"), str(record.get("message", record.get("Message", ""))), record,
     )
 
@@ -135,7 +135,7 @@ def correlate(events: Iterable[Event]) -> list[Finding]:
         related = [(i, candidate) for i, candidate in enumerate(ordered[start + 1 : start + 8], start + 1)]
         network = next(((i, e) for i, e in related if e.event_type == "network_connection" and e.destination_ip), None)
         created = next(((i, e) for i, e in related if e.event_type == "file_create" and e.path and _is_temp_executable(e.path)), None)
-        launched = next(((i, e) for i, e in related if e.event_type == "process_start" and created and e.process_name and Path(created[1].path or "").name.lower() == e.process_name.lower()), None)
+        launched = next(((i, e) for i, e in related if e.event_type == "process_start" and created and e.process_name and _portable_basename(created[1].path or "").lower() == e.process_name.lower()), None)
         if network and created and launched:
             findings.append(Finding("Script-to-download execution chain", "High", "PowerShell execution followed by an external connection, a temporary executable, and its launch", [start, network[0], created[0], launched[0]]))
 
@@ -149,4 +149,9 @@ def correlate(events: Iterable[Event]) -> list[Finding]:
 def _is_temp_executable(path: str) -> bool:
     value = path.replace("\\", "/").lower()
     return ("/temp/" in value or value.startswith("/tmp/")) and value.endswith((".exe", ".dll", ".sh", ".bin"))
+
+
+def _portable_basename(path: str) -> str:
+    """Treat both slash styles as separators regardless of the host running DeepTrace."""
+    return path.replace("\\", "/").rsplit("/", 1)[-1]
 
