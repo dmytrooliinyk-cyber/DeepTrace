@@ -68,27 +68,69 @@ def _native_process(pid: int) -> dict[str, Any]:
     return result
 
 
+def _process_field(call: Any) -> Any:
+    try:
+        return call()
+    except psutil.AccessDenied:
+        return "unavailable: access denied"
+    except psutil.NoSuchProcess:
+        raise
+    except psutil.Error as exc:
+        return f"unavailable: {exc}"
+
+
+def _child_summaries(process: psutil.Process) -> list[dict[str, Any]] | str:
+    children = _process_field(lambda: process.children(recursive=False))
+    if isinstance(children, str):
+        return children
+    result = []
+    for child in children:
+        try:
+            name = child.name()
+        except psutil.AccessDenied:
+            name = "unavailable: access denied"
+        except psutil.NoSuchProcess:
+            name = "unavailable: process exited"
+        except psutil.Error as exc:
+            name = f"unavailable: {exc}"
+        result.append({"pid": child.pid, "name": name})
+    return result
+
+
+def _process_connections(process: psutil.Process) -> list[Any] | str:
+    try:
+        return process.net_connections(kind="inet")
+    except psutil.AccessDenied:
+        return "unavailable: access denied"
+    except psutil.NoSuchProcess:
+        raise
+    except (psutil.Error, OSError, RuntimeError) as exc:
+        return f"unavailable: {exc}"
+
+
 def process_report(pid: int) -> dict[str, Any]:
     try:
         process = psutil.Process(pid)
         with process.oneshot():
-            children = [{"pid": child.pid, "name": child.name()} for child in process.children(recursive=False)]
-            try:
-                connections = process.net_connections(kind="inet")
-            except (psutil.AccessDenied, psutil.Error):
-                connections = []
+            children = _child_summaries(process)
+            connections = _process_connections(process)
+            if isinstance(connections, str):
+                connection_report: list[dict[str, str]] | str = connections
+            else:
+                connection_report = [{"local": _address(c.laddr), "remote": _address(c.raddr), "state": c.status or "NONE"} for c in connections]
+            executable = _process_field(process.exe)
+            start_value = _process_field(process.create_time)
+            start_time = datetime.fromtimestamp(start_value, timezone.utc).isoformat() if isinstance(start_value, (int, float)) else start_value
             report = {
-                "pid": process.pid, "ppid": process.ppid(), "name": process.name(),
-                "executable": process.exe() or "unavailable", "command_line": process.cmdline(),
-                "username": process.username(), "start_time": datetime.fromtimestamp(process.create_time(), timezone.utc).isoformat(),
-                "status": process.status(), "children": children,
-                "connections": [{"local": _address(c.laddr), "remote": _address(c.raddr), "state": c.status or "NONE"} for c in connections],
+                "pid": process.pid, "ppid": _process_field(process.ppid), "name": _process_field(process.name),
+                "executable": executable or "unavailable", "command_line": _process_field(process.cmdline),
+                "username": _process_field(process.username), "start_time": start_time,
+                "status": _process_field(process.status), "children": children,
+                "connections": connection_report,
                 "native": _native_process(pid),
             }
     except psutil.NoSuchProcess as exc:
         raise DeepTraceError(f"process {pid} does not exist") from exc
-    except psutil.AccessDenied as exc:
-        raise DeepTraceError(f"access denied while inspecting process {pid}") from exc
     except psutil.Error as exc:
         raise DeepTraceError(f"could not inspect process {pid}: {exc}") from exc
     return report
